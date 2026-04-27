@@ -1,6 +1,8 @@
 // Justin Gu, Jaeden Russell, Chloe Facchinetti
 // CPE 301 Final Project
 
+#include <Wire.h>
+
 #define RDA 0x80
 #define TBE 0x20
 
@@ -21,18 +23,25 @@ volatile unsigned char *my_DDRG  = (unsigned char *) 0x33;
 volatile unsigned char *my_PORTG = (unsigned char *) 0x34;
 volatile unsigned char *my_DDRD  = (unsigned char *) 0x2A;
 volatile unsigned char *my_PORTD = (unsigned char *) 0x2B;
+volatile unsigned char *my_DDRH  = (unsigned char *) 0x101;
+volatile unsigned char *my_PORTH = (unsigned char *) 0x102;
+volatile unsigned char *my_PINH  = (unsigned char *) 0x100;
 
-#define GREEN_BIT     0x08
-#define RED_BIT       0x20
-#define BLUE_BIT      0x10
-#define YELLOW_BIT    0x20
-#define ON_BUTTON_BIT 0x08
+#define GREEN_BIT      0x08
+#define RED_BIT        0x20
+#define BLUE_BIT       0x10
+#define YELLOW_BIT     0x20
+#define ON_BUTTON_BIT  0x08
+#define OFF_BUTTON_BIT 0x08
+#define RST_BUTTON_BIT 0x10
 
 #define MOISTURE_ERROR_LOW  200
 #define MOISTURE_GOOD_MAX   380
 #define MOISTURE_DRY_MAX    425
 
-#define DEBUG_INTERVAL 3000
+#define DEBUG_INTERVAL  3000
+#define DEBOUNCE_DELAY  200
+#define DS1307_ADDR     0x68
 
 typedef enum {
   STATE_OFF,
@@ -44,6 +53,7 @@ typedef enum {
 volatile SystemState currentState = STATE_OFF;
 volatile bool onButtonPressed = false;
 unsigned long lastDebugPrint = 0;
+unsigned long lastDebounce = 0;
 
 void onButtonISR()
 {
@@ -57,6 +67,7 @@ void setup()
 {
   U0init(9600);
   adc_init();
+  Wire.begin();
 
   *my_DDRE |= GREEN_BIT;
   *my_DDRE |= RED_BIT;
@@ -66,6 +77,11 @@ void setup()
   *my_DDRD  &= ~ON_BUTTON_BIT;
   *my_PORTD |=  ON_BUTTON_BIT;
   attachInterrupt(digitalPinToInterrupt(18), onButtonISR, FALLING);
+
+  *my_DDRH  &= ~OFF_BUTTON_BIT;
+  *my_PORTH |=  OFF_BUTTON_BIT;
+  *my_DDRH  &= ~RST_BUTTON_BIT;
+  *my_PORTH |=  RST_BUTTON_BIT;
 
   setLED(STATE_OFF);
   printString("System OFF. Press ON button to start.\n");
@@ -79,6 +95,30 @@ void loop()
     currentState = STATE_IDLE;
     setLED(STATE_IDLE);
     printString("ON pressed - now in IDLE\n");
+    logRTC();
+  }
+
+  unsigned long now = millis();
+
+  if ((*my_PINH & OFF_BUTTON_BIT) == 0 && now - lastDebounce > DEBOUNCE_DELAY)
+  {
+    lastDebounce = now;
+    currentState = STATE_OFF;
+    setLED(STATE_OFF);
+    printString("OFF pressed - system off\n");
+    logRTC();
+  }
+
+  if ((*my_PINH & RST_BUTTON_BIT) == 0 && now - lastDebounce > DEBOUNCE_DELAY)
+  {
+    if (currentState == STATE_ERROR)
+    {
+      lastDebounce = now;
+      currentState = STATE_IDLE;
+      setLED(STATE_IDLE);
+      printString("RESET pressed - back to IDLE\n");
+      logRTC();
+    }
   }
 
   if (currentState == STATE_OFF)
@@ -88,7 +128,6 @@ void loop()
 
   unsigned int moisture = adc_read(0);
 
-  unsigned long now = millis();
   if (now - lastDebugPrint >= DEBUG_INTERVAL)
   {
     lastDebugPrint = now;
@@ -116,6 +155,7 @@ void loop()
     currentState = newState;
     setLED(currentState);
     logStateChange(currentState, moisture);
+    logRTC();
   }
 }
 
@@ -159,6 +199,43 @@ void logStateChange(SystemState state, unsigned int moisture)
     printString("State: ERROR  moisture: ");
   }
   printNumber(moisture);
+  printString("\n");
+}
+
+byte bcdToDec(byte val)
+{
+  return ((val / 16) * 10) + (val % 16);
+}
+
+void logRTC()
+{
+  Wire.beginTransmission(DS1307_ADDR);
+  Wire.write(0);
+  Wire.endTransmission();
+  Wire.requestFrom(DS1307_ADDR, 7);
+
+  byte seconds = bcdToDec(Wire.read() & 0x7F);
+  byte minutes = bcdToDec(Wire.read());
+  byte hours   = bcdToDec(Wire.read() & 0x3F);
+  Wire.read();
+  byte day     = bcdToDec(Wire.read());
+  byte month   = bcdToDec(Wire.read());
+  byte year    = bcdToDec(Wire.read());
+
+  printString("Time: ");
+  printNumber(hours);
+  printString(":");
+  if (minutes < 10) printString("0");
+  printNumber(minutes);
+  printString(":");
+  if (seconds < 10) printString("0");
+  printNumber(seconds);
+  printString("  Date: ");
+  printNumber(month);
+  printString("/");
+  printNumber(day);
+  printString("/");
+  printNumber(year);
   printString("\n");
 }
 
