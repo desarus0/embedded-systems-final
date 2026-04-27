@@ -2,6 +2,7 @@
 // CPE 301 Final Project
 
 #include <Wire.h>
+#include <LiquidCrystal.h>
 
 #define RDA 0x80
 #define TBE 0x20
@@ -42,7 +43,10 @@ volatile unsigned char *my_PORTA = (unsigned char *) 0x22;
 #define MOISTURE_GOOD_MAX   380
 #define MOISTURE_DRY_MAX    425
 
-#define DEBUG_INTERVAL  3000
+#define LCD_INTERVAL    60000
+
+LiquidCrystal lcd(53, 51, 49, 47, 45, 43);
+unsigned long lastLCDUpdate = 0;
 #define DEBOUNCE_DELAY  200
 #define DS1307_ADDR     0x68
 
@@ -55,7 +59,6 @@ typedef enum {
 
 volatile SystemState currentState = STATE_OFF;
 volatile bool onButtonPressed = false;
-unsigned long lastDebugPrint = 0;
 unsigned long lastDebounce = 0;
 
 void onButtonISR()
@@ -71,6 +74,10 @@ void setup()
   U0init(9600);
   adc_init();
   Wire.begin();
+  lcd.begin(16, 2);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("System OFF");
 
   *my_DDRE |= GREEN_BIT;
   *my_DDRE |= RED_BIT;
@@ -101,6 +108,8 @@ void loop()
     setLED(STATE_IDLE);
     printString("ON pressed - now in IDLE\n");
     logRTC();
+    unsigned int initMoisture = adc_read(0);
+    updateLCD(STATE_IDLE, initMoisture);
   }
 
   unsigned long now = millis();
@@ -112,6 +121,9 @@ void loop()
     setLED(STATE_OFF);
     printString("OFF pressed - system off\n");
     logRTC();
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("System OFF");
   }
 
   if ((*my_PINH & RST_BUTTON_BIT) == 0 && now - lastDebounce > DEBOUNCE_DELAY)
@@ -123,6 +135,8 @@ void loop()
       setLED(STATE_IDLE);
       printString("RESET pressed - back to IDLE\n");
       logRTC();
+      unsigned int rstMoisture = adc_read(0);
+      updateLCD(STATE_IDLE, rstMoisture);
     }
   }
 
@@ -133,12 +147,10 @@ void loop()
 
   unsigned int moisture = adc_read(0);
 
-  if (now - lastDebugPrint >= DEBUG_INTERVAL)
+  if (now - lastLCDUpdate >= LCD_INTERVAL)
   {
-    lastDebugPrint = now;
-    printString("Moisture: ");
-    printNumber(moisture);
-    printString("\n");
+    lastLCDUpdate = now;
+    updateLCD(currentState, moisture);
   }
 
   SystemState newState;
@@ -161,6 +173,7 @@ void loop()
     setLED(currentState);
     logStateChange(currentState, moisture);
     logRTC();
+    updateLCD(currentState, moisture);
   }
 }
 
@@ -246,6 +259,29 @@ void logRTC()
   printString("/");
   printNumber(year);
   printString("\n");
+}
+
+void updateLCD(SystemState state, unsigned int moisture)
+{
+  lcd.clear();
+  lcd.setCursor(0, 0);
+
+  if (state == STATE_IDLE)
+  {
+    lcd.print("State: IDLE");
+  }
+  else if (state == STATE_ACTIVE)
+  {
+    lcd.print("State: ACTIVE");
+  }
+  else if (state == STATE_ERROR)
+  {
+    lcd.print("State: ERROR");
+  }
+
+  lcd.setCursor(0, 1);
+  lcd.print("Moisture: ");
+  lcd.print(moisture);
 }
 
 void adc_init()
