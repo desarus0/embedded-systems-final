@@ -26,6 +26,8 @@ volatile unsigned char *my_PORTD = (unsigned char *) 0x2B;
 volatile unsigned char *my_DDRH  = (unsigned char *) 0x101;
 volatile unsigned char *my_PORTH = (unsigned char *) 0x102;
 volatile unsigned char *my_PINH  = (unsigned char *) 0x100;
+volatile unsigned char *my_DDRA  = (unsigned char *) 0x21;
+volatile unsigned char *my_PORTA = (unsigned char *) 0x22;
 
 #define GREEN_BIT      0x08
 #define RED_BIT        0x20
@@ -33,6 +35,7 @@ volatile unsigned char *my_PINH  = (unsigned char *) 0x100;
 #define YELLOW_BIT     0x20
 #define ON_BUTTON_BIT  0x08
 #define OFF_BUTTON_BIT 0x08
+#define BUZZER_BIT     0x01
 #define RST_BUTTON_BIT 0x10
 
 #define MOISTURE_ERROR_LOW  200
@@ -73,6 +76,8 @@ void setup()
   *my_DDRE |= RED_BIT;
   *my_DDRE |= BLUE_BIT;
   *my_DDRG |= YELLOW_BIT;
+  *my_DDRA  |= BUZZER_BIT;
+  *my_PORTA &= ~BUZZER_BIT;
 
   *my_DDRD  &= ~ON_BUTTON_BIT;
   *my_PORTD |=  ON_BUTTON_BIT;
@@ -169,18 +174,22 @@ void setLED(SystemState state)
   if (state == STATE_OFF)
   {
     *my_PORTE |= RED_BIT;
+    *my_PORTA &= ~BUZZER_BIT;
   }
   else if (state == STATE_IDLE)
   {
     *my_PORTE |= GREEN_BIT;
+    *my_PORTA &= ~BUZZER_BIT;
   }
   else if (state == STATE_ACTIVE)
   {
     *my_PORTG |= YELLOW_BIT;
+    *my_PORTA |= BUZZER_BIT;
   }
   else if (state == STATE_ERROR)
   {
     *my_PORTE |= BLUE_BIT;
+    *my_PORTA &= ~BUZZER_BIT;
   }
 }
 
